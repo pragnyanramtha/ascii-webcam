@@ -1,102 +1,94 @@
+// static/app.js
+
 class ASCIIWebcam {
     constructor() {
-        this.socket = null;
         this.display = document.getElementById('ascii-display');
         this.status = document.getElementById('status');
-        this.toggleBtn = document.getElementById('toggleBtn');
-        this.isRunning = false;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 10;
+        this.video = document.getElementById('webcam-feed');
+        this.canvas = document.getElementById('capture-canvas');
+        this.context = this.canvas.getContext('2d', { willReadFrequently: true });
+
+        this.socket = null;
+        this.stream = null;
+        this.captureInterval = null;
+        this.FRAME_RATE = 15; // Capture and send 15 frames per second
         
         this.init();
     }
-    
-    init() {
-        this.connect();
-        this.toggleBtn.addEventListener('click', () => this.toggle());
+ 
+    async init() {
+        try {
+            // Request webcam access from the user
+            this.stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { width: 640, height: 480 },
+                audio: false 
+            });
+            this.video.srcObject = this.stream;
+            this.video.style.display = 'block'; // Show the video feed
+            this.status.textContent = "Camera accessed. Connecting to server...";
+            this.connect();
+        } catch (err) {
+            this.status.textContent = 'Error: Could not access webcam. Please grant permission.';
+            this.status.className = 'status disconnected';
+            this.display.textContent = `Error: ${err.name}\n\nThis feature requires camera permissions. Please allow access and refresh the page.`;
+        }
     }
     
     connect() {
-        // Use correct WebSocket URL for Render
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        // Connect to the single '/ws' endpoint
+        const wsUrl = `${protocol}//${window.location.host}/ws`; 
+        this.socket = new WebSocket(wsUrl);
         
-        this.status.textContent = 'Connecting...';
-        this.status.className = 'status';
+        this.socket.onopen = () => {
+            this.status.textContent = 'Connected! Streaming video...';
+            this.status.className = 'status connected';
+            this.startFrameCapture();
+        };
         
-        try {
-            this.socket = new WebSocket(wsUrl);
-            
-            this.socket.onopen = () => {
-                console.log('WebSocket connected');
-                this.status.textContent = 'Connected - Streaming ASCII Art';
-                this.status.className = 'status connected';
-                this.isRunning = true;
-                this.reconnectAttempts = 0;
-            };
-            
-            this.socket.onmessage = (event) => {
-                try {
-                    const message = JSON.parse(event.data);
-                    if (message.type === 'frame') {
-                        this.displayFrame(message.data);
-                    }
-                } catch (error) {
-                    console.error('Error parsing message:', error);
-                }
-            };
-            
-            this.socket.onclose = (event) => {
-                console.log('WebSocket closed:', event.code, event.reason);
-                this.status.textContent = 'Disconnected';
-                this.status.className = 'status disconnected';
-                this.isRunning = false;
-                
-                // Exponential backoff reconnection
-                if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-                    this.reconnectAttempts++;
-                    setTimeout(() => this.connect(), delay);
-                }
-            };
-            
-            this.socket.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                this.status.textContent = 'Connection Error - Retrying...';
-                this.status.className = 'status disconnected';
-            };
-            
-        } catch (error) {
-            console.error('Failed to create WebSocket:', error);
-            this.status.textContent = 'Failed to create connection';
+        this.socket.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'frame') {
+                this.display.innerHTML = this.ansiToHtml(message.data);
+            }
+        };
+        
+        this.socket.onclose = () => {
+            this.status.textContent = 'Disconnected.';
             this.status.className = 'status disconnected';
-        }
+            this.stopFrameCapture();
+        };
+        
+        this.socket.onerror = (error) => {
+            this.status.textContent = 'Connection Error.';
+            this.status.className = 'status disconnected';
+        };
+    }
+
+    startFrameCapture() {
+        if (this.captureInterval) return;
+        this.captureInterval = setInterval(() => {
+            if (this.socket.readyState !== WebSocket.OPEN) return;
+            this.canvas.width = this.video.videoWidth;
+            this.canvas.height = this.video.videoHeight;
+            this.context.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+            const frameData = this.canvas.toDataURL('image/jpeg', 0.6); // Use JPEG with 60% quality
+            this.socket.send(frameData);
+        }, 1000 / this.FRAME_RATE);
     }
     
-    displayFrame(asciiData) {
-        // Convert ANSI codes to HTML with better error handling
-        try {
-            let htmlData = asciiData
-                .replace(/\033\[38;2;(\d+);(\d+);(\d+)m/g, '<span style="color: rgb($1, $2, $3);">')
-                .replace(/\033\[0m/g, '</span>');
-            
-            this.display.innerHTML = htmlData;
-        } catch (error) {
-            console.error('Error displaying frame:', error);
-        }
+    stopFrameCapture() {
+        clearInterval(this.captureInterval);
+        this.captureInterval = null;
     }
-    
-    toggle() {
-        if (this.isRunning && this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.close();
-        } else {
-            this.reconnectAttempts = 0;
-            this.connect();
-        }
+
+    ansiToHtml(ansiData) {
+        return ansiData
+            .replace(/\033\[38;2;(\d+);(\d+);(\d+)m/g, '<span style="color: rgb($1, $2, $3);">')
+            .replace(/\033\[0m/g, '</span>');
     }
 }
 
-// Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
     new ASCIIWebcam();
 });

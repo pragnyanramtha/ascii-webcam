@@ -3,27 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live ASCII Art Demo</title>
+    <title>Live ASCII Art - Webcam</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
-        <h1>Live ASCII Art Demo</h1>
+        <h1>Live ASCII Art from Your Webcam</h1>
         <div class="info">
-            <p>🎨 Real-time animated ASCII art streaming</p>
-            <p>💡 This demo shows animated patterns since webcam access requires local deployment</p>
+            <p>📷 Grant camera access to see the magic happen!</p>
+            <p>🖼️ A low-resolution video feed is shown below for aiming.</p>
         </div>
-        <div class="status" id="status">Connecting...</div>
+        
+        <!-- Video element to display the webcam feed -->
+        <video id="webcam-feed" autoplay playsinline muted></video>
+        
+        <!-- Canvas for capturing frames (hidden from view) -->
+        <canvas id="capture-canvas" style="display:none;"></canvas>
+
+        <div class="status" id="status">Requesting camera access...</div>
         <div class="ascii-container">
-            <pre id="ascii-display">Loading ASCII art stream...</pre>
-        </div>
-        <div class="controls">
-            <button id="toggleBtn">Reconnect</button>
-        </div>
-        <div class="footer">
-            <p>For webcam support, run locally with: <code>python main.py</code></p>
+            <pre id="ascii-display">Awaiting video stream...</pre>
         </div>
     </div>
+    <!-- Load the application's JavaScript -->
     <script src="/static/app.js"></script>
 </body>
 </html>
