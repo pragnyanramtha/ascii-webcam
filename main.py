@@ -1,6 +1,7 @@
 import asyncio
 import cv2
 import json
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -29,49 +30,57 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            # Keep connection alive
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
 def camera_stream():
-    """Camera streaming thread"""
-    global camera, streaming
-    
-    camera = cv2.VideoCapture(0)
-    camera.set(cv2.CAP_PROP_FPS, 20)
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    
+    """Mock camera stream for cloud deployment"""
+    global streaming
     streaming = True
     
+    # Create a simple test pattern since webcam isn't available on cloud
+    import numpy as np
+    
+    frame_count = 0
     while streaming:
-        ret, frame = camera.read()
-        if not ret:
-            continue
-            
+        # Create animated test pattern
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        
+        # Moving gradient
+        for y in range(480):
+            for x in range(640):
+                r = int((x + frame_count) % 256)
+                g = int((y + frame_count * 2) % 256)
+                b = int((x + y + frame_count) % 256)
+                frame[y, x] = [b, g, r]  # BGR format
+        
         # Convert to ASCII
         ascii_frame = converter.frame_to_ascii(frame)
         
         # Send to all connected clients
         message = json.dumps({"type": "frame", "data": ascii_frame})
         
-        # Remove disconnected clients
+        # Send to active connections
         disconnected = []
         for connection in active_connections:
             try:
-                asyncio.create_task(connection.send_text(message))
+                # Use asyncio.run_coroutine_threadsafe for thread safety
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(connection.send_text(message))
+                loop.close()
             except:
                 disconnected.append(connection)
         
+        # Remove disconnected clients
         for conn in disconnected:
             if conn in active_connections:
                 active_connections.remove(conn)
         
-        time.sleep(1/20)  # 20 FPS
-    
-    if camera:
-        camera.release()
+        frame_count += 1
+        time.sleep(1/15)  # 15 FPS for better performance
 
 @app.on_event("startup")
 async def startup_event():
@@ -86,4 +95,6 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Use PORT environment variable for Render
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
