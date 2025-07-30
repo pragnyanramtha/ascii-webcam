@@ -96,5 +96,4 @@ async def shutdown_event():
 if __name__ == "__main__":
     import uvicorn
     # Use PORT environment variable for Render
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=10000)
